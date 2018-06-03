@@ -1,42 +1,38 @@
 #include <DHT.h>
 
 #define DHT_PIN 0
-#define FAN_PIN 0
 /*             ^ Fix it with and delete this comment. */
 #define DHT_TYPE DHT11
 
-unsigned const WAIT_DECIDE = 60 * 1000 * 60;//60 minutes
-unsigned const WAIT_SEND = 30 * 1000 * 60;//30 minutes
-unsigned const WAIT_MEASURE = 15 * 1000; //15 seconds
-unsigned const WAIT_FAN = 60 * 1000; //1 minute
-unsigned const WAIT_USER = 5 * 1000; //5 seconds
+#define FAN_PIN 0
+/*             ^ Fix it with and delete this comment. */
 
-char const SSID[] = "";
-char const PASS[] = "";
-/*                  ^ Fix it and delete this comment. */
+unsigned long const WAIT_DECIDE  = 60UL * 1000 * 60;//60 minutes
+unsigned long const WAIT_SEND    = 30UL * 1000 * 60;//30 minutes
+unsigned long const WAIT_MEASURE = 15UL * 1000;     //15 seconds
+unsigned long const WAIT_FAN     = 60UL * 1000 * 5; //5 minutes
+unsigned long const WAIT_USER    = 5UL  * 1000;     //5 seconds
+
+unsigned long last_send = 0UL;
+unsigned long last_user = 0UL;
+unsigned long last_measure = 0UL;
+unsigned long last_fan = 0UL;
 
 DHT dht(DHT_PIN, DHT_TYPE);
-
-unsigned last_send = 0;
-unsigned last_user = 0;
-unsigned last_measure = 0;
-unsigned last_fan = 0;
-
-bool fan_status = LOW;
-bool can_decide = false;
-
 float temperature = 0.0f;
-float humidity = 0.0f;
+float humidity    = 0.0f;
+bool fan_status   = LOW;
+bool can_decide   = true;
 
 void setup() {
   Serial.begin(9600);
-
+  
   dht.begin();
-
-  pinMode(FANPIN, OUT);
-  digitalWrite(FANPIN, LOW);
-
-  /* Set connection with database */
+  
+  pinMode(FAN_PIN, OUTPUT);
+  digitalWrite(FAN_PIN, LOW);
+  
+  /* Set the connection with the platform. */
 }
 
 float read_temperature() {
@@ -48,7 +44,9 @@ float read_humidity() {
 }
 
 bool request_fan_status() {
-  /* Implement this function.
+  /* Implement this function, it returns the value of the fan variable in
+   * the server. It's made for allowing the user turn on/off the fan.
+   *
    * Return by default the current status just in case the connection fails.
    * This in order to avoid changes in the fan status.
    */
@@ -56,22 +54,20 @@ bool request_fan_status() {
 }
 
 bool send_data(float temperature, float humidity) {
-  /* Send data, return true if successfull
-   * ... and delete this comment.
-   */
+  /* Send data to the server, return true if successfull. */
   return false;
 }
 
 bool send_fan_status(bool fan_status) {
-  /*
-   * Update fan status on server and return true if successfull.
-   * ... and delete this comment.
+  /* Update fan status on server and return true if successfull. 
+   * This one is made for allowing the system to take decisions about the fan's status, while
+   * noticing the user.
    */
   return false;
 }
 
 void loop() {
-  unsigned now = millis();
+  unsigned long now = millis();
 
   if(WAIT_MEASURE < now - last_measure) {
     temperature = read_temperature();
@@ -104,7 +100,7 @@ void loop() {
     digitalWrite(FAN_PIN, fan_status);
 
     if(fan_status != server_fan_status) {
-      send_fan_status();
+      send_fan_status(fan_status);
     }
 
     if(fan_status != last_fan_status) {
