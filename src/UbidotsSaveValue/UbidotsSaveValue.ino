@@ -1,3 +1,11 @@
+/**
+ * Using these libraries:
+ * Ubidots, Remember modify this library (adding WiFi101.h) for mkr1000:
+ * https://github.com/ubidots/ubidots-arduino-wifi
+ * WiFi101, to conecting with wifi net:
+ * https://github.com/arduino-libraries/WiFi101
+ */
+
 #include <SPI.h>
 #include <WiFi101.h>
 #include <UbidotsArduino.h>
