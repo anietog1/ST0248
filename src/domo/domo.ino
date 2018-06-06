@@ -1,7 +1,8 @@
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
 #include <SPI.h>
 #include <WiFi101.h>
 #include <UbidotsArduino.h>
-#include <DHT.h>
 
 int const DHT_PIN  = 5;
 int const DHT_TYPE = DHT11;
@@ -16,10 +17,11 @@ char const TOKEN  [] = "BBFF-J4H9tdvAFxGTcAdZkaZy7nEcfFznH9";
 char const SSID[] = "FLIA RESTREPO";
 char const PASS[] = "zafiro5821";
 
-unsigned long const WAIT_SEND    = 30UL * 1000 * 60; //30 minutes
+unsigned long const WAIT_SEND    = 15UL * 1000 * 60; //30 minutes
 unsigned long const WAIT_MEASURE = 15UL * 1000;      //15 seconds
 unsigned long const WAIT_FAN     = 60UL * 1000 * 5;  //5 minutes
-unsigned long const WAIT_AUTO    = 5UL  * 1000;      //5 seconds
+unsigned long const WAIT_AUTO    = 2UL  * 1000;      //2 seconds
+unsigned long const WAIT_USER    = 2UL  * 1000;      //2 seconds
 
 int connection_status = WL_IDLE_STATUS;
 
@@ -27,6 +29,7 @@ unsigned long last_send    = 0UL;
 unsigned long last_measure = 0UL;
 unsigned long last_fan     = 0UL;
 unsigned long last_auto    = 0UL;
+unsigned long last_user    = 0UL;
 
 Ubidots client(TOKEN);
 
@@ -105,17 +108,6 @@ bool request_auto_mode() {
   }
 }
 
-bool request_fan_status() {
-  float* response_array = client.getValue(ID_FAN);
-
-  if(response_array[0]) {
-    return response_array[1];
-  } else {
-    return fan_status;
-  }
-}
-
-
 void loop() {
   unsigned long now = millis();
 
@@ -133,27 +125,21 @@ void loop() {
 
   if(WAIT_AUTO < now - last_auto) {
     auto_mode = request_auto_mode();
+    last_auto = now;
   }
 
   if(auto_mode) {
     if(WAIT_FAN < now - last_fan) {
-      bool server_fan_status = request_fan_status();
-      bool last_fan_status = fan_status;
-
       fan_status = temperature > 30.0f ? HIGH : LOW;
-
       digitalWrite(FAN_PIN, fan_status);
-
-      if(fan_status != server_fan_status) {
-        send_fan_status(fan_status);
-      }
-
-      if(fan_status != last_fan_status) {
-        last_fan = now;
-      }
+      send_fan_status(fan_status);
+      last_fan = now;
     }
   } else {
-    fan_status = request_fan_status();
-    digitalWrite(FAN_PIN, fan_status);
+    if(WAIT_USER < now - last_user) {
+      fan_status = request_fan_status();
+      digitalWrite(FAN_PIN, fan_status);
+      last_user = now;
+    }
   }
 }
