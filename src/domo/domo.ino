@@ -1,38 +1,79 @@
+#include <SPI.h>
+#include <WiFi101.h>
+#include <UbidotsArduino.h>
 #include <DHT.h>
 
-#define DHT_PIN 0
-/*             ^ Fix it with and delete this comment. */
-#define DHT_TYPE DHT11
+int const DHT_PIN  = 5;
+int const DHT_TYPE = DHT11;
+int const FAN_PIN  = 4;
 
-#define FAN_PIN 0
-/*             ^ Fix it with and delete this comment. */
+char const ID_TEMP[] = "5b14aab6642ab6389cd81c04";
+char const ID_HUMI[] = "5b14ac57642ab63ac843b882";
+char const ID_FAN [] = "5b0cc856642ab67ab668a90a";
+char const ID_AUTO[] = "5b16e732642ab60aa533763e";
+char const TOKEN  [] = "BBFF-J4H9tdvAFxGTcAdZkaZy7nEcfFznH9";
 
-unsigned long const WAIT_DECIDE  = 60UL * 1000 * 60;//60 minutes
-unsigned long const WAIT_SEND    = 30UL * 1000 * 60;//30 minutes
-unsigned long const WAIT_MEASURE = 15UL * 1000;     //15 seconds
-unsigned long const WAIT_FAN     = 60UL * 1000 * 5; //5 minutes
-unsigned long const WAIT_USER    = 5UL  * 1000;     //5 seconds
+char const SSID[] = "FLIA RESTREPO";
+char const PASS[] = "zafiro5821";
 
-unsigned long last_send = 0UL;
-unsigned long last_user = 0UL;
+unsigned long const WAIT_SEND    = 30UL * 1000 * 60; //30 minutes
+unsigned long const WAIT_MEASURE = 15UL * 1000;      //15 seconds
+unsigned long const WAIT_FAN     = 60UL * 1000 * 5;  //5 minutes
+unsigned long const WAIT_AUTO    = 5UL  * 1000;      //5 seconds
+
+int connection_status = WL_IDLE_STATUS;
+
+unsigned long last_send    = 0UL;
 unsigned long last_measure = 0UL;
-unsigned long last_fan = 0UL;
+unsigned long last_fan     = 0UL;
+unsigned long last_auto    = 0UL;
+
+Ubidots client(TOKEN);
 
 DHT dht(DHT_PIN, DHT_TYPE);
+
 float temperature = 0.0f;
 float humidity    = 0.0f;
-bool fan_status   = LOW;
-bool can_decide   = true;
+
+bool fan_status = LOW;
+bool auto_mode  = true;
 
 void setup() {
   Serial.begin(9600);
-  
+
+#ifdef DEBUG
+  while(!Serial);
+#endif
+
   dht.begin();
-  
+
   pinMode(FAN_PIN, OUTPUT);
   digitalWrite(FAN_PIN, LOW);
-  
-  /* Set the connection with the platform. */
+
+  if(WiFi.status() == WL_NO_SHIELD) {
+#ifdef DEBUG
+    Serial.println("WiFi shield not present.");
+#endif
+
+    while (true);
+  }
+
+#ifdef DEBUG
+  String fv = WiFi.firmwareVersion();
+  if (fv != "1.1.0") {
+    Serial.println("Please upgrade the firmware.");
+  }
+#endif
+
+  while(connection_status != WL_CONNECTED) {
+#ifdef DEBUG
+    Serial.print("Attempting to connect to SSID: \"");
+    Serial.println(SSID + "\".");
+#endif
+
+    connection_status = WiFi.begin(SSID, PASS);
+    delay(1000);
+  }
 }
 
 float read_temperature() {
@@ -43,28 +84,37 @@ float read_humidity() {
   return dht.readHumidity();
 }
 
-bool request_fan_status() {
-  /* Implement this function, it returns the value of the fan variable in
-   * the server. It's made for allowing the user turn on/off the fan.
-   *
-   * Return by default the current status just in case the connection fails.
-   * This in order to avoid changes in the fan status.
-   */
-  return fan_status;
-}
-
 bool send_data(float temperature, float humidity) {
-  /* Send data to the server, return true if successfull. */
-  return false;
+  client.add(ID_TEMP, temperature);
+  client.add(ID_HUMI, humidity);
+  return client.sendAll();
 }
 
 bool send_fan_status(bool fan_status) {
-  /* Update fan status on server and return true if successfull. 
-   * This one is made for allowing the system to take decisions about the fan's status, while
-   * noticing the user.
-   */
-  return false;
+  client.add(ID_FAN, fan_status);
+  return client.sendAll();
 }
+
+bool request_auto_mode() {
+  float* response_array = client.getValue(ID_AUTO);
+
+  if(response_array[0]) {
+    return response_array[1];
+  } else {
+    return auto_mode;
+  }
+}
+
+bool request_fan_status() {
+  float* response_array = client.getValue(ID_FAN);
+
+  if(response_array[0]) {
+    return response_array[1];
+  } else {
+    return fan_status;
+  }
+}
+
 
 void loop() {
   unsigned long now = millis();
@@ -81,30 +131,29 @@ void loop() {
     }
   }
 
-  if(WAIT_USER < now - last_user) {
-    bool server_fan_status = request_fan_status();
-
-    if(server_fan_status != fan_status) {
-      fan_status = server_fan_status;
-      digitalWrite(FAN_PIN, fan_status);
-      last_user = now;
-    }
+  if(WAIT_AUTO < now - last_auto) {
+    auto_mode = request_auto_mode();
   }
 
-  if(WAIT_DECIDE < now - last_user && WAIT_FAN < now - last_fan) {
-    bool last_fan_status = fan_status;
-    bool server_fan_status = request_fan_status();
+  if(auto_mode) {
+    if(WAIT_FAN < now - last_fan) {
+      bool server_fan_status = request_fan_status();
+      bool last_fan_status = fan_status;
 
-    fan_status = temperature > 30.0f ? HIGH : LOW;
+      fan_status = temperature > 30.0f ? HIGH : LOW;
 
+      digitalWrite(FAN_PIN, fan_status);
+
+      if(fan_status != server_fan_status) {
+        send_fan_status(fan_status);
+      }
+
+      if(fan_status != last_fan_status) {
+        last_fan = now;
+      }
+    }
+  } else {
+    fan_status = request_fan_status();
     digitalWrite(FAN_PIN, fan_status);
-
-    if(fan_status != server_fan_status) {
-      send_fan_status(fan_status);
-    }
-
-    if(fan_status != last_fan_status) {
-      last_fan = now;
-    }
   }
 }
