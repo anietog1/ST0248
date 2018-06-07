@@ -8,18 +8,19 @@ int const DHT_PIN  = 5;
 int const DHT_TYPE = DHT11;
 int const FAN_PIN  = 4;
 
-char const ID_TEMP[] = "5b14aab6642ab6389cd81c04";
-char const ID_HUMI[] = "5b14ac57642ab63ac843b882";
-char const ID_FAN [] = "5b0cc856642ab67ab668a90a";
-char const ID_AUTO[] = "5b16e732642ab60aa533763e";
-char const TOKEN  [] = "BBFF-J4H9tdvAFxGTcAdZkaZy7nEcfFznH9";
+char ID_TEMP [] = "5b14aab6642ab6389cd81c04";
+char ID_HUMI [] = "5b14ac57642ab63ac843b882";
+char ID_FAN  [] = "5b0cc856642ab67ab668a90a";
+char ID_AUTO [] = "5b16e732642ab60aa533763e";
+char ID_LIMIT[] = "5b195b24642ab62cefb9ebf2";
+char TOKEN   [] = "BBFF-J4H9tdvAFxGTcAdZkaZy7nEcfFznH9";
 
-char const SSID[] = "FLIA RESTREPO";
-char const PASS[] = "zafiro5821";
+char const SSID[] = "agus";
+char const PASS[] = "catalina";
 
-unsigned long const WAIT_SEND    = 15UL * 1000 * 60; //30 minutes
+unsigned long const WAIT_SEND    = 15UL * 1000 * 60; //15 minutes
 unsigned long const WAIT_MEASURE = 15UL * 1000;      //15 seconds
-unsigned long const WAIT_FAN     = 60UL * 1000 * 5;  //5 minutes
+unsigned long const WAIT_FAN     = 2UL  * 1000;      //2 seconds
 unsigned long const WAIT_AUTO    = 2UL  * 1000;      //2 seconds
 unsigned long const WAIT_USER    = 2UL  * 1000;      //2 seconds
 
@@ -38,8 +39,9 @@ DHT dht(DHT_PIN, DHT_TYPE);
 float temperature = 0.0f;
 float humidity    = 0.0f;
 
-bool fan_status = LOW;
-bool auto_mode  = true;
+bool  fan_status        = LOW;
+bool  auto_mode         = true;
+float temperature_limit = 30.0f;
 
 void setup() {
   Serial.begin(9600);
@@ -70,8 +72,8 @@ void setup() {
 
   while(connection_status != WL_CONNECTED) {
 #ifdef DEBUG
-    Serial.print("Attempting to connect to SSID: \"");
-    Serial.println(SSID + "\".");
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(SSID);
 #endif
 
     connection_status = WiFi.begin(SSID, PASS);
@@ -98,6 +100,16 @@ bool send_fan_status(bool fan_status) {
   return client.sendAll();
 }
 
+bool request_fan_status() {
+  float* response_array = client.getValue(ID_FAN);
+
+  if(response_array[0]) {
+    return response_array[1];
+  } else {
+    return fan_status;
+  }
+}
+
 bool request_auto_mode() {
   float* response_array = client.getValue(ID_AUTO);
 
@@ -107,6 +119,17 @@ bool request_auto_mode() {
     return auto_mode;
   }
 }
+
+float request_temperature_limit() {
+  float* response_array = client.getValue(ID_LIMIT);
+
+  if(response_array[0]) {
+    return response_array[1];
+  } else {
+    return temperature_limit;
+  }
+}
+
 
 void loop() {
   unsigned long now = millis();
@@ -130,7 +153,8 @@ void loop() {
 
   if(auto_mode) {
     if(WAIT_FAN < now - last_fan) {
-      fan_status = temperature > 30.0f ? HIGH : LOW;
+      temperature_limit = request_temperature_limit();
+      fan_status = temperature >= temperature_limit ? HIGH : LOW;
       digitalWrite(FAN_PIN, fan_status);
       send_fan_status(fan_status);
       last_fan = now;
